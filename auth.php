@@ -84,9 +84,9 @@ class auth_plugin_ws extends auth_plugin_base {
     public function sync_users(progress_trace $trace, $doupdates = false) {
         global $DB;
 
-        $functionname = 'GetAlunos';
-        $params = array('sParametrosBusca' => 'Inadimplente=0');
         $dbman = $DB->get_manager();
+
+        $trace->output(get_string('creatingtemptable', 'auth_ws', 'tmp_extuser'));
         $table = new xmldb_table('tmp_extuser');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', XMLDB_UNSIGNED, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('username', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
@@ -94,14 +94,14 @@ class auth_plugin_ws extends auth_plugin_base {
         $table->add_field('email', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
         $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
         $table->add_index('username', XMLDB_INDEX_UNIQUE, array('username'));
-
-        print_string('creatingtemptable', 'auth_ws', 'tmp_extuser');
         $dbman->create_temp_table($table);
 
-        print_string('fetchingstudents', 'auth_ws');
+        $trace->output(get_string('fetchingstudents', 'auth_ws'));
+        $functionname = 'GetAlunos';
+        $params = array('sParametrosBusca' => 'Inadimplente=0');
         $result = $this->call_ws($this->config->serverurl, $functionname, $params);
 
-        print_string('savingtotemptable', 'auth_ws');
+        $trace->output(get_string('savingtotemptable', 'auth_ws'));
         foreach ($result->GetAlunosResult->wsAluno as $user) {
             $newuser = array('username'=> $user->LoginPortal,
                              'firstname' => $user->Nome, 'email' => $user->Email);
@@ -134,7 +134,7 @@ class auth_plugin_ws extends auth_plugin_base {
             }
         }
 
-        echo 'updating users...<br/>';
+        $trace->output('updating users...');
         $sql = 'UPDATE {user} u
                   JOIN {tmp_extuser} e
                     ON (e.username = u.username)
@@ -144,7 +144,7 @@ class auth_plugin_ws extends auth_plugin_base {
                        u.deleted = 0,
                        u.confirmed = 1
                  WHERE u.auth = "ws"';
-        echo 'users updated.<br/>';
+        $trace->output('users updated.');
 
         $sql = 'SELECT u.id,u.username
                   FROM {user} u
@@ -160,8 +160,7 @@ class auth_plugin_ws extends auth_plugin_base {
             $updateuser->id = $user->id;
             $updateuser->suspended = 1;
             user_update_user($updateuser, false);
-            echo print_string('suspenduser', 'auth_db', array('name'=>$user->username, 'id'=>$user->id));
-            echo "<br/>";
+            $trace->output(get_string('suspenduser', 'auth_db', array('name'=>$user->username, 'id'=>$user->id)));
             \core\session\manager::kill_user_sessions($user->id);
         }
         return true;
