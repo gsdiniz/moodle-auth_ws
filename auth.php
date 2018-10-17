@@ -103,9 +103,18 @@ class auth_plugin_ws extends auth_plugin_base {
 
         $trace->output(get_string('savingtotemptable', 'auth_ws'));
         foreach ($result->GetAlunosResult->wsAluno as $user) {
-            $newuser = array('username'=> $user->LoginPortal,
-                             'firstname' => $user->Nome, 'email' => $user->Email);
-            $DB->insert_record_raw('tmp_extuser', $newuser, false);
+            if (isset($user->Email) && !empty($user->Email)) {
+                $newuser = array('username'=> $user->Email,
+                                 'firstname' => $user->Nome, 'email' => $user->Email);
+                if ($existinguser = $DB->get_record('tmp_extuser', array('username' => $user->Email))) {
+                    $trace->output('Email duplicado: '. $user->AlunoID . ' - ' . $user->Nome);
+                    $trace->output('Usuário existente: '. $existinguser->firstname);
+                } else {
+                    $DB->insert_record_raw('tmp_extuser', $newuser, false);
+                }
+            } else {
+                $trace->output('Usuario sem email: '. $user->AlunoID . ' - ' . $user->Nome);
+            }
         }
 
         /// preserve our user database
@@ -113,10 +122,10 @@ class auth_plugin_ws extends auth_plugin_base {
         /// so as to avoid mass deletion of users; which is hard to undo
         $count = $DB->count_records_sql('SELECT COUNT(*) AS count, 1 FROM {tmp_extuser}');
         if ($count < 1) {
-            print_string('didntgetusersfromws', 'auth_ws');
+            $trace->output(get_string('didntgetusersfromws', 'auth_ws'));
             exit;
         } else {
-            print_string('gotcountrecordsfromws', 'auth_ws', $count);
+            $trace->output(get_string('gotcountrecordsfromws', 'auth_ws', $count));
         }
 
         $sql = 'SELECT e.*
@@ -129,8 +138,9 @@ class auth_plugin_ws extends auth_plugin_base {
             foreach ($add_users as $user) {
                 $user->confirmed = 1;
                 $user->auth = $this->authtype;
+                $user->username = core_user::clean_field($user->username, 'username');
                 $id = user_create_user($user, false);
-                echo 'creted user: '.$user->firstname.'<br/>';
+                $trace->output('creted user: '.$user->firstname);
             }
         }
 
@@ -153,14 +163,15 @@ class auth_plugin_ws extends auth_plugin_base {
                  WHERE e.id IS NULL
                    AND u.auth = "ws"
                    AND u.deleted = 0
-                   AND u.suspended = 0';
+                   AND u.suspended = 0
+                   AND u.id > 2';
         $remove_users = $DB->get_records_sql($sql);
         foreach ($remove_users as $user) {
             $updateuser = new stdClass();
             $updateuser->id = $user->id;
             $updateuser->suspended = 1;
             user_update_user($updateuser, false);
-            $trace->output(get_string('suspenduser', 'auth_db', array('name'=>$user->username, 'id'=>$user->id)));
+            $trace->output(get_string('suspenduser', 'auth_ws', $user));
             \core\session\manager::kill_user_sessions($user->id);
         }
         return true;

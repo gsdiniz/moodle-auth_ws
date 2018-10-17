@@ -46,4 +46,5 @@ $string['protocol_desc'] = 'Protocol used by webservice. Currently only SOAP.';
 $string['savingtotemptable'] = 'Creating temporary table {$a}';
 $string['serverurl'] = 'Auth Server URL';
 $string['serverurl_desc'] = 'Full URL to webservice to execute the authentication functions';
+$string['suspenduser'] = 'Suspended user with username {$a->username} and id {$a->id}';
 $string['syncuserstask'] = 'Sync users from auth_ws';
