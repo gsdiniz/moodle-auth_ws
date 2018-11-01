@@ -98,7 +98,7 @@ class auth_plugin_ws extends auth_plugin_base {
 
         $trace->output(get_string('fetchingstudents', 'auth_ws'));
         $functionname = 'GetAlunos';
-        $params = array('sParametrosBusca' => 'Inadimplente=0');
+        $params = array('sParametrosBusca' => 'Inadimplente=0;SituacaoAlunoID=-1');
         $result = $this->call_ws($this->config->serverurl, $functionname, $params);
 
         $trace->output(get_string('savingtotemptable', 'auth_ws'));
