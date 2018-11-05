@@ -65,11 +65,12 @@ class auth_plugin_ws extends auth_plugin_base {
 
         $functionname = $this->config->auth_function;
         $params  = array($this->config->auth_function_username_paramname => $username,
-                         $this->config->auth_function_password_paramname => $password);
+                         $this->config->auth_function_password_paramname => $password,
+                         'nTipoUsuario' => 0, 'sEmpresa' => 'marques');
 
         $result = $this->call_ws($this->config->serverurl, $functionname, $params);
 
-        return ($result[$this->config->auth_function_resultClass][$this->config->auth_function_resultField] == true);
+        return ($result->{$this->config->auth_function_resultClass}->{$this->config->auth_function_resultField} == true);
     }
 
     /**
@@ -90,10 +91,13 @@ class auth_plugin_ws extends auth_plugin_base {
         $table = new xmldb_table('tmp_extuser');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', XMLDB_UNSIGNED, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('username', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('firstname', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('firstname', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('lastname', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
         $table->add_field('email', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('idnumber', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
         $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
         $table->add_index('username', XMLDB_INDEX_UNIQUE, array('username'));
+        $table->add_index('idnumber', XMLDB_INDEX_UNIQUE, array('idnumber'));
         $dbman->create_temp_table($table);
 
         $trace->output(get_string('fetchingstudents', 'auth_ws'));
@@ -103,17 +107,25 @@ class auth_plugin_ws extends auth_plugin_base {
 
         $trace->output(get_string('savingtotemptable', 'auth_ws'));
         foreach ($result->GetAlunosResult->wsAluno as $user) {
-            if (isset($user->Email) && !empty($user->Email)) {
-                $newuser = array('username'=> $user->Email,
-                                 'firstname' => $user->Nome, 'email' => $user->Email);
-                if ($existinguser = $DB->get_record('tmp_extuser', array('username' => $user->Email))) {
-                    $trace->output('Email duplicado: '. $user->AlunoID . ' - ' . $user->Nome);
-                    $trace->output('Usuário existente: '. $existinguser->firstname);
+            if (isset($user->Email) && !empty($user->Email) && !empty($user->LoginPortal)) {
+
+                $nameexploded = explode(' ', trim($user->Nome));
+                $lastname = array_pop($nameexploded);
+                $firstname = implode($nameexploded, ' ');
+                $newuser = array('idnumber' => $user->AlunoID, 'username'=> $user->LoginPortal,
+                                 'firstname' => $firstname, 'email' => $user->Email, 'lastname' => $lastname);
+
+                if ($existinguser = $DB->get_record('tmp_extuser', array('idnumber' => $newuser['idnumber']))) {
+                    $trace->output('IDNUMBER duplicado: '. $existinguser->firstname. ' '.$existinguser->lastname. ' ' .$existinguser->idnumber);
+                } else if ($existinguser = $DB->get_record('tmp_extuser', array('email' => $newuser['email']))) {
+                    $trace->output('email duplicado: '. $newuser->firstname. ' '.$newuser->lastname. ' ' .$existinguser->idnumber);
+                    $trace->output('email já existente: '. $existinguser->firstname. ' '.$existinguser->lastname.
+                                   ' ' .$existinguser->email . ' ' . $existinguser->idnumber);
                 } else {
                     $DB->insert_record_raw('tmp_extuser', $newuser, false);
                 }
             } else {
-                $trace->output('Usuario sem email: '. $user->AlunoID . ' - ' . $user->Nome);
+                $trace->output('Usuario sem email ou loginportal: '. $user->AlunoID . ' - ' . $user->Nome);
             }
         }
 
@@ -131,7 +143,7 @@ class auth_plugin_ws extends auth_plugin_base {
         $sql = 'SELECT e.*
                   FROM {tmp_extuser} e
              LEFT JOIN {user} u
-                    ON (e.username = u.username)
+                    ON (e.idnumber = u.idnumber)
                  WHERE u.id IS NULL';
         $add_users = $DB->get_records_sql($sql);
         if (!empty($add_users)) {
@@ -139,6 +151,7 @@ class auth_plugin_ws extends auth_plugin_base {
                 $user->confirmed = 1;
                 $user->auth = $this->authtype;
                 $user->username = core_user::clean_field($user->username, 'username');
+                $user->mnethostid = $CFG->mnet_localhost_id;
                 $id = user_create_user($user, false);
                 $trace->output('creted user: '.$user->firstname);
             }
@@ -147,19 +160,22 @@ class auth_plugin_ws extends auth_plugin_base {
         $trace->output('updating users...');
         $sql = 'UPDATE {user} u
                   JOIN {tmp_extuser} e
-                    ON (e.username = u.username)
-                   SET u.firstname = e.firstname,
+                    ON (u.idnumber = e.idnumber)
+                   SET u.username = e.username,
+                       u.firstname = e.firstname,
+                       u.lastname = e.lastname,
                        u.email = e.email,
                        u.suspended = 0,
                        u.deleted = 0,
                        u.confirmed = 1
                  WHERE u.auth = "ws"';
+        $DB->execute($sql);
         $trace->output('users updated.');
 
         $sql = 'SELECT u.id,u.username
                   FROM {user} u
              LEFT JOIN {tmp_extuser} e
-                    ON (e.username = u.username)
+                    ON (e.idnumber = u.idnumber)
                  WHERE e.id IS NULL
                    AND u.auth = "ws"
                    AND u.deleted = 0
