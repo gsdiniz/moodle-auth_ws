@@ -83,7 +83,7 @@ class auth_plugin_ws extends auth_plugin_base {
      * @return int 0 means success, 1 means failure
      */
     public function sync_users(progress_trace $trace, $doupdates = false) {
-        global $DB;
+        global $DB, $CFG;
 
         $dbman = $DB->get_manager();
 
