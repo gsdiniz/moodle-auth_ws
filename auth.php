@@ -153,7 +153,7 @@ class auth_plugin_ws extends auth_plugin_base {
                 $user->username = core_user::clean_field($user->username, 'username');
                 $user->mnethostid = $CFG->mnet_localhost_id;
                 $id = user_create_user($user, false);
-                $trace->output('creted user: '.$user->firstname);
+                $trace->output('creted user: '.$user->firstname. ' '. $user->lastname);
             }
         }
 
