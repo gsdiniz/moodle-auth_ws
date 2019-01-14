@@ -275,4 +275,93 @@ class auth_plugin_ws extends auth_plugin_base {
     public function can_reset_password() {
         return false;
     }
+
+    public function map_users() {
+        global $DB, $CFG;
+
+        $dbman = $DB->get_manager();
+
+        $trace = new \text_progress_trace();
+
+        $trace->output(get_string('creatingtemptable', 'auth_ws', 'tmp_extuser'));
+        $table = new xmldb_table('tmp_extuser');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', XMLDB_UNSIGNED, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('username', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('firstname', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('lastname', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('email', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('idnumber', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
+        $table->add_index('username', XMLDB_INDEX_UNIQUE, array('username'));
+        $table->add_index('idnumber', XMLDB_INDEX_UNIQUE, array('idnumber'));
+        $dbman->create_temp_table($table);
+
+        $trace->output(get_string('fetchingstudents', 'auth_ws'));
+        $functionname = 'GetAlunos';
+        $params = array('sParametrosBusca' => 'Inadimplente=0;SituacaoAlunoID=-1');
+        $result = $this->call_ws($this->config->serverurl, $functionname, $params);
+
+        $trace->output(get_string('savingtotemptable', 'auth_ws'));
+        foreach ($result->GetAlunosResult->wsAluno as $user) {
+            if (isset($user->Email) && !empty($user->Email) && !empty($user->LoginPortal)) {
+
+                $nameexploded = explode(' ', trim($user->Nome));
+                $lastname = array_pop($nameexploded);
+                $firstname = implode($nameexploded, ' ');
+                $newuser = array('idnumber' => $user->AlunoID, 'username'=> $user->LoginPortal,
+                                 'firstname' => $firstname, 'email' => $user->Email, 'lastname' => $lastname);
+
+                if ($existinguser = $DB->get_record('tmp_extuser', array('idnumber' => $newuser['idnumber']))) {
+                    $trace->output('IDNUMBER duplicado: '. $existinguser->firstname. ' '.$existinguser->lastname. ' ' .$existinguser->idnumber);
+                } else if ($existinguser = $DB->get_record('tmp_extuser', array('email' => $newuser['email']))) {
+                    $trace->output('email duplicado: '. $existinguser->firstname. ' '.$existinguser->lastname. ' ' .$existinguser->idnumber);
+                    $trace->output('email já existente: '. $existinguser->firstname. ' '.$existinguser->lastname.
+                                   ' ' .$existinguser->email . ' ' . $existinguser->idnumber);
+                } else {
+                    $DB->insert_record_raw('tmp_extuser', $newuser, false);
+                }
+            } else {
+                $trace->output('Usuario sem email ou loginportal: '. $user->AlunoID . ' - ' . $user->Nome);
+            }
+        }
+
+        /// preserve our user database
+        /// if the temp table is empty, it probably means that something went wrong, exit
+        /// so as to avoid mass deletion of users; which is hard to undo
+        $count = $DB->count_records_sql('SELECT COUNT(*) AS count, 1 FROM {tmp_extuser}');
+        if ($count < 1) {
+            $trace->output(get_string('didntgetusersfromws', 'auth_ws'));
+            exit;
+        } else {
+            $trace->output(get_string('gotcountrecordsfromws', 'auth_ws', $count));
+        }
+
+        $trace->output('updating users...');
+        $time = time();
+
+        $duplicateemails = ['andreza_gja@hotmail.com', 'aparecido.jose.apl@gmail.com', 'bibitruiz96@outlook.com', 'daianeday566@gmail.com',
+                            'edvandamirellapaiva@gmail.com', 'juliana.996659013@hotmail.com', 'laporte_layla@hotmail.com',
+                            'larissadesouzasantos7@gmail.com', 'marcelosb_23@hotmail.com', 'michaelgabrieldfn@gmail.com',
+                            'neessa.barbosa@hotmail.com'];
+        list($emailsql, $params) = $DB->get_in_or_equal($duplicateemails, SQL_PARAMS_NAMED, 'u', false);
+        $sql = 'UPDATE {user} u
+                  JOIN {tmp_extuser} e
+                    ON (u.email = e.email)
+                   SET u.username = e.username,
+                       u.firstname = e.firstname,
+                       u.lastname = e.lastname,
+                       u.idnumber = e.idnumber,
+                       u.suspended = 0,
+                       u.confirmed = 1,
+                       u.timemodified = '.$time.',
+                       u.auth = "ws"
+                 WHERE u.deleted = 0
+                   AND u.id > 2
+                   AND u.email '.$emailsql;
+
+        $DB->execute($sql, $params);
+        $trace->output('users updated.');
+
+        return true;
+    }
 }
